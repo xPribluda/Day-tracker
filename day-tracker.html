@@ -272,12 +272,12 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, or
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -346,6 +346,25 @@ function setSync(state) {
 // Firestore paths
 const eCol  = (uid,day) => collection(db,'users',uid,'days',day,'entries');
 const catDoc = uid      => doc(db,'users',uid,'meta','categories');
+
+// TIMER STATE IN FIRESTORE
+async function saveTimerState(state){
+  if(!currentUser)return;
+  try{ await setDoc(doc(db,'users',currentUser.uid,'meta','timer'), state); }catch(e){}
+}
+async function clearTimerState(){
+  if(!currentUser)return;
+  try{ await deleteDoc(doc(db,'users',currentUser.uid,'meta','timer')); }catch(e){}
+}
+async function loadTimerState(){
+  if(!currentUser)return null;
+  try{
+    const snap=await getDocs(collection(db,'users',currentUser.uid,'meta'));
+    let state=null;
+    snap.forEach(d=>{ if(d.id==='timer') state=d.data(); });
+    return state;
+  }catch(e){ return null; }
+}
 
 // AUTH
 window.signInWithGoogle = async () => {
@@ -450,10 +469,10 @@ window.selectCat = id => {
 function timerTick(){
   document.getElementById('timer-display').textContent=fmt(pausedElapsed + Date.now()-timerStart.getTime());
 }
-function restoreTimer(){
-  const saved=localStorage.getItem('dt_timer');
+async function restoreTimer(){
+  const saved=await loadTimerState();
   if(!saved)return;
-  const {catId,startISO,pausedElapsed:pe,paused}=JSON.parse(saved);
+  const {catId,startISO,pausedElapsed:pe,paused}=saved;
   const cat=categories.find(c=>c.id===catId);
   if(!cat)return;
   selectedCat=catId; timerStart=new Date(startISO); timerOn=true;
@@ -472,6 +491,7 @@ function restoreTimer(){
     document.getElementById('pause-btn').style.display='';
     timerIv=setInterval(timerTick,1000);
     timerTick();
+    scheduleNudge();
   }
 }
 function getNudgeMs(){
@@ -487,26 +507,53 @@ function scheduleNudge(){
   nudgeTimeout=setTimeout(()=>showNudge(), ms);
 }
 
+let nudgeBuzzInterval = null;
+
+function playBuzz(annoying){
+  try {
+    const ctx=new AudioContext();
+    if(annoying){
+      // Three sharp beeps
+      [0, 0.25, 0.5].forEach(offset => {
+        const osc=ctx.createOscillator(), gain=ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value=880; osc.type='square';
+        gain.gain.setValueAtTime(0.4, ctx.currentTime+offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+offset+0.15);
+        osc.start(ctx.currentTime+offset); osc.stop(ctx.currentTime+offset+0.15);
+      });
+    } else {
+      const osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value=520; osc.type='sine';
+      gain.gain.setValueAtTime(0.3,ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
+      osc.start(); osc.stop(ctx.currentTime+0.6);
+    }
+  } catch(e){}
+}
+
 function showNudge(){
   if(!timerOn||timerPaused) return;
   const cat=categories.find(c=>c.id===selectedCat);
   document.getElementById('nudge-title').textContent='Check in!';
   document.getElementById('nudge-msg').textContent=`Are you still working on ${cat?cat.name:'your activity'}?`;
   document.getElementById('nudge-modal').style.display='flex';
-  // Play a soft beep
-  try {
-    const ctx=new AudioContext();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value=520; osc.type='sine';
-    gain.gain.setValueAtTime(0.3,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
-    osc.start(); osc.stop(ctx.currentTime+0.6);
-  } catch(e){}
+  playBuzz(false);
+  // Start annoying buzz every minute until dismissed
+  clearInterval(nudgeBuzzInterval);
+  nudgeBuzzInterval=setInterval(()=>{
+    if(document.getElementById('nudge-modal').style.display!=='none'){
+      playBuzz(true);
+    }
+  }, 60000);
 }
 
-function hideNudge(){ document.getElementById('nudge-modal').style.display='none'; }
+function hideNudge(){
+  document.getElementById('nudge-modal').style.display='none';
+  clearInterval(nudgeBuzzInterval);
+  nudgeBuzzInterval=null;
+}
 
 window.nudgeYes = ()=>{
   hideNudge();
@@ -531,7 +578,7 @@ window.startTimer = ()=>{
   if(!isToday(viewDate)){alert('You can only start a timer for today.');return;}
   if(!selectedCat){alert('Select an activity first.');return;}
   timerStart=new Date(); timerOn=true; timerPaused=false; pausedElapsed=0;
-  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed:0}));
+  saveTimerState({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed:0,paused:false});
   document.getElementById('start-btn').style.display='none';
   document.getElementById('stop-btn').style.display='';
   document.getElementById('pause-btn').style.display='';
@@ -542,7 +589,7 @@ window.startTimer = ()=>{
 };
 window.stopTimer = ()=>{
   clearInterval(timerIv); clearTimeout(nudgeTimeout); timerOn=false; timerPaused=false;
-  localStorage.removeItem('dt_timer'); hideNudge();
+  clearTimerState(); hideNudge();
   const end=new Date(), cat=categories.find(c=>c.id===selectedCat);
   const totalMs = pausedElapsed + (end.getTime()-timerStart.getTime());
   const adjStart = new Date(end.getTime()-totalMs);
@@ -551,21 +598,21 @@ window.stopTimer = ()=>{
 };
 window.cancelTimer = ()=>{
   clearInterval(timerIv); clearTimeout(nudgeTimeout); timerOn=false; timerPaused=false; pausedElapsed=0;
-  localStorage.removeItem('dt_timer'); hideNudge();
+  clearTimerState(); hideNudge();
   resetTimer();
 };
 window.pauseTimer = ()=>{
   if(!timerOn||timerPaused)return;
   clearInterval(timerIv); clearTimeout(nudgeTimeout); timerPaused=true;
   pausedElapsed += Date.now()-timerStart.getTime();
-  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed,paused:true}));
+  saveTimerState({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed,paused:true});
   document.getElementById('pause-btn').style.display='none';
   document.getElementById('resume-btn').style.display='';
 };
 window.resumeTimer = ()=>{
   if(!timerPaused)return;
   timerStart=new Date(); timerPaused=false;
-  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed}));
+  saveTimerState({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed,paused:false});
   timerIv=setInterval(timerTick,1000);
   timerTick();
   document.getElementById('resume-btn').style.display='none';
