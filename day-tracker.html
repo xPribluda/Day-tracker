@@ -246,12 +246,12 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, or
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -270,6 +270,11 @@ const DEFAULT_CATS = [
   { id:'social_media',   name:'Social Media',     color:'#EC4899' },
   { id:'news',           name:'News',             color:'#F97316' },
   { id:'personal',       name:'Personal',         color:'#6B7280' },
+  { id:'visualization',  name:'Visualization',    color:'#A855F7' },
+  { id:'meditation',     name:'Meditation',       color:'#14B8A6' },
+  { id:'reflection',     name:'Reflection',       color:'#6366F1' },
+  { id:'journaling',     name:'Journaling',       color:'#D97706' },
+  { id:'sleep',          name:'Sleep',            color:'#4F46E5' },
 ];
 
 let categories  = [...DEFAULT_CATS];
