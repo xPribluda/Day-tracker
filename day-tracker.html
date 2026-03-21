@@ -267,17 +267,17 @@
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, getDocs }
+import { getFirestore, collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, query, orderBy, getDocs }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -359,10 +359,8 @@ async function clearTimerState(){
 async function loadTimerState(){
   if(!currentUser)return null;
   try{
-    const snap=await getDocs(collection(db,'users',currentUser.uid,'meta'));
-    let state=null;
-    snap.forEach(d=>{ if(d.id==='timer') state=d.data(); });
-    return state;
+    const snap=await getDoc(doc(db,'users',currentUser.uid,'meta','timer'));
+    return snap.exists() ? snap.data() : null;
   }catch(e){ return null; }
 }
 
