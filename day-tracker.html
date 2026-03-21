@@ -250,6 +250,24 @@
   </div>
 </div>
 
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg);padding:1.5rem;max-width:340px;width:100%;border:0.5px solid var(--border2);box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+    <div style="font-size:15px;font-weight:600;margin-bottom:1.25rem;">Edit entry</div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div class="field"><label>Activity</label><select id="edit-cat" style="width:100%;"></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="field"><label>Start</label><input type="time" id="edit-start"></div>
+        <div class="field"><label>End</label><input type="time" id="edit-end"></div>
+      </div>
+      <div class="field"><label>Note</label><input type="text" id="edit-note" placeholder="Optional note..."></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1.25rem;">
+      <button class="primary" onclick="saveEdit()" style="flex:1;">Save</button>
+      <button onclick="closeEdit()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="nudge-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;padding:1rem;">
   <div style="background:var(--bg);border-radius:var(--radius-lg);padding:2rem;max-width:300px;width:100%;text-align:center;border:0.5px solid var(--border2);box-shadow:0 8px 32px rgba(0,0,0,0.15);">
     <div style="font-size:36px;margin-bottom:0.75rem;">🎯</div>
@@ -272,12 +290,12 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, q
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -640,6 +658,39 @@ window.addManual = ()=>{
   document.getElementById('man-start').value=e;
   document.getElementById('man-end').value=tStr(new Date(en.getTime()+30*60000));
 };
+let editingEntry=null;
+
+window.openEdit=(id,startISO)=>{
+  editingEntry=entries.find(e=>String(e.id)===String(id));
+  if(!editingEntry)return;
+  const sel=document.getElementById('edit-cat');
+  sel.innerHTML=categories.map(c=>`<option value="${c.id}" ${c.id===editingEntry.catId?'selected':''}>${c.name}</option>`).join('');
+  document.getElementById('edit-start').value=tStr(new Date(editingEntry.start));
+  document.getElementById('edit-end').value=tStr(new Date(editingEntry.end));
+  document.getElementById('edit-note').value=editingEntry.note||'';
+  document.getElementById('edit-modal').style.display='flex';
+};
+
+window.closeEdit=()=>{
+  document.getElementById('edit-modal').style.display='none';
+  editingEntry=null;
+};
+
+window.saveEdit=async()=>{
+  if(!editingEntry)return;
+  const catId=document.getElementById('edit-cat').value;
+  const cat=categories.find(c=>c.id===catId);
+  const s=document.getElementById('edit-start').value;
+  const e=document.getElementById('edit-end').value;
+  const note=document.getElementById('edit-note').value.trim();
+  if(!s||!e){alert('Please enter start and end times.');return;}
+  const st=parseTm(s),en=parseTm(e);
+  if(en<=st){alert('End must be after start.');return;}
+  await removeEntry(editingEntry.id,editingEntry.start);
+  await saveEntry({id:editingEntry.id,catId,catName:cat.name,color:cat.color,start:st.toISOString(),end:en.toISOString(),note});
+  closeEdit();
+};
+
 window.deleteEntry=(id,startISO)=>removeEntry(id,startISO);
 
 // LOG
@@ -656,6 +707,7 @@ function renderLog(){
         ${e.note?`<div class="log-note">${e.note}</div>`:''}
       </div>
       <span class="log-dur">${fmtMin(dur)}</span>
+      <button class="del-btn" onclick="openEdit('${e.id}','${e.start}')" style="font-size:14px;" title="Edit">&#9998;</button>
       <button class="del-btn" onclick="deleteEntry(${e.id},'${e.start}')">×</button>
     </div>`;
   }).join('');
