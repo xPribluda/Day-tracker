@@ -246,14 +246,13 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, or
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 const fireApp = initializeApp(firebaseConfig);
@@ -334,7 +333,7 @@ onAuthStateChanged(auth, user => {
     const av=document.getElementById('user-avatar');
     if(user.photoURL){av.src=user.photoURL;av.style.display='';}
     viewDate=new Date();
-    loadCats(); subscribe(); updateNav();
+    loadCats().then(()=>restoreTimer()); subscribe(); updateNav();
     const now=new Date();
     document.getElementById('man-start').value=tStr(now);
     document.getElementById('man-end').value=tStr(new Date(now.getTime()+30*60000));
@@ -418,29 +417,55 @@ window.selectCat = id => {
   document.getElementById('timer-cat-label').textContent=cat?cat.name:'No activity selected';
 };
 
-// TIMER
+// TIMER - persists across backgrounding
+function timerTick(){
+  document.getElementById('timer-display').textContent=fmt(Date.now()-timerStart.getTime());
+}
+function restoreTimer(){
+  const saved=localStorage.getItem('dt_timer');
+  if(!saved)return;
+  const {catId,startISO}=JSON.parse(saved);
+  const cat=categories.find(c=>c.id===catId);
+  if(!cat)return;
+  selectedCat=catId; timerStart=new Date(startISO); timerOn=true;
+  renderCats();
+  document.getElementById('timer-cat-label').textContent=cat.name;
+  document.getElementById('start-btn').style.display='none';
+  document.getElementById('stop-btn').style.display='';
+  document.getElementById('cancel-btn').style.display='';
+  timerIv=setInterval(timerTick,1000);
+  timerTick();
+}
 window.startTimer = ()=>{
   if(!isToday(viewDate)){alert('You can only start a timer for today.');return;}
   if(!selectedCat){alert('Select an activity first.');return;}
   timerStart=new Date(); timerOn=true;
+  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString()}));
   document.getElementById('start-btn').style.display='none';
   document.getElementById('stop-btn').style.display='';
   document.getElementById('cancel-btn').style.display='';
-  timerIv=setInterval(()=>{document.getElementById('timer-display').textContent=fmt(Date.now()-timerStart);},1000);
+  timerIv=setInterval(timerTick,1000);
+  timerTick();
 };
 window.stopTimer = ()=>{
   clearInterval(timerIv); timerOn=false;
+  localStorage.removeItem('dt_timer');
   const end=new Date(), cat=categories.find(c=>c.id===selectedCat);
   saveEntry({id:Date.now(),catId:selectedCat,catName:cat.name,color:cat.color,start:timerStart.toISOString(),end:end.toISOString(),note:''});
   resetTimer();
 };
-window.cancelTimer = ()=>{clearInterval(timerIv);timerOn=false;resetTimer();};
+window.cancelTimer = ()=>{
+  clearInterval(timerIv); timerOn=false;
+  localStorage.removeItem('dt_timer');
+  resetTimer();
+};
 function resetTimer(){
   document.getElementById('timer-display').textContent='00:00:00';
   document.getElementById('start-btn').style.display='';
   document.getElementById('stop-btn').style.display='none';
   document.getElementById('cancel-btn').style.display='none';
 }
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&timerOn)timerTick();});
 
 // MANUAL
 window.addManual = ()=>{
