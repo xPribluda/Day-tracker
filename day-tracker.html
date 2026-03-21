@@ -189,9 +189,22 @@
       <div class="timer-box">
         <div class="timer-label" id="timer-cat-label">No activity selected</div>
         <div class="timer-display" id="timer-display">00:00:00</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:1rem;">
+          <span style="font-size:12px;color:var(--text2);">Check in every</span>
+          <select id="nudge-interval" style="width:auto;padding:5px 10px;font-size:13px;">
+            <option value="0">No check-in</option>
+            <option value="5">5 min</option>
+            <option value="10" selected>10 min</option>
+            <option value="15">15 min</option>
+            <option value="20">20 min</option>
+            <option value="30">30 min</option>
+          </select>
+        </div>
         <div class="btn-row">
           <button class="primary" id="start-btn" onclick="startTimer()">Start</button>
           <button class="danger" id="stop-btn" onclick="stopTimer()" style="display:none">Stop &amp; Save</button>
+          <button id="pause-btn" onclick="pauseTimer()" style="display:none">Pause</button>
+          <button id="resume-btn" onclick="resumeTimer()" style="display:none">Resume</button>
           <button id="cancel-btn" onclick="cancelTimer()" style="display:none">Cancel</button>
         </div>
       </div>
@@ -237,6 +250,19 @@
   </div>
 </div>
 
+<div id="nudge-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg);padding:2rem;max-width:300px;width:100%;text-align:center;border:0.5px solid var(--border2);box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+    <div style="font-size:36px;margin-bottom:0.75rem;">🎯</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:0.5rem;" id="nudge-title">Check in!</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1.5rem;" id="nudge-msg">Are you still focused?</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="primary" onclick="nudgeYes()">Yes, still on it</button>
+      <button onclick="nudgeSwitch()">I drifted — switch activity</button>
+      <button class="danger" onclick="nudgeStop()">Stop &amp; Save</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged }
@@ -246,12 +272,12 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, or
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -281,6 +307,9 @@ let categories  = [...DEFAULT_CATS];
 let entries     = [];
 let selectedCat = null;
 let timerIv     = null;
+let timerPaused = false;
+let pausedElapsed = 0;
+let nudgeTimeout = null;
 let timerStart  = null;
 let timerOn     = false;
 let pieChart    = null;
@@ -419,50 +448,136 @@ window.selectCat = id => {
 
 // TIMER - persists across backgrounding
 function timerTick(){
-  document.getElementById('timer-display').textContent=fmt(Date.now()-timerStart.getTime());
+  document.getElementById('timer-display').textContent=fmt(pausedElapsed + Date.now()-timerStart.getTime());
 }
 function restoreTimer(){
   const saved=localStorage.getItem('dt_timer');
   if(!saved)return;
-  const {catId,startISO}=JSON.parse(saved);
+  const {catId,startISO,pausedElapsed:pe,paused}=JSON.parse(saved);
   const cat=categories.find(c=>c.id===catId);
   if(!cat)return;
   selectedCat=catId; timerStart=new Date(startISO); timerOn=true;
+  pausedElapsed=pe||0;
   renderCats();
   document.getElementById('timer-cat-label').textContent=cat.name;
   document.getElementById('start-btn').style.display='none';
   document.getElementById('stop-btn').style.display='';
   document.getElementById('cancel-btn').style.display='';
-  timerIv=setInterval(timerTick,1000);
-  timerTick();
+  if(paused){
+    timerPaused=true;
+    document.getElementById('resume-btn').style.display='';
+    document.getElementById('pause-btn').style.display='none';
+    document.getElementById('timer-display').textContent=fmt(pausedElapsed);
+  } else {
+    document.getElementById('pause-btn').style.display='';
+    timerIv=setInterval(timerTick,1000);
+    timerTick();
+  }
 }
+function getNudgeMs(){
+  const sel=document.getElementById('nudge-interval');
+  if(!sel||sel.value==='0') return 0;
+  return parseInt(sel.value)*60000;
+}
+
+function scheduleNudge(){
+  clearTimeout(nudgeTimeout);
+  const ms=getNudgeMs();
+  if(ms<=0) return;
+  nudgeTimeout=setTimeout(()=>showNudge(), ms);
+}
+
+function showNudge(){
+  if(!timerOn||timerPaused) return;
+  const cat=categories.find(c=>c.id===selectedCat);
+  document.getElementById('nudge-title').textContent='Check in!';
+  document.getElementById('nudge-msg').textContent=`Are you still working on ${cat?cat.name:'your activity'}?`;
+  document.getElementById('nudge-modal').style.display='flex';
+  // Play a soft beep
+  try {
+    const ctx=new AudioContext();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value=520; osc.type='sine';
+    gain.gain.setValueAtTime(0.3,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
+    osc.start(); osc.stop(ctx.currentTime+0.6);
+  } catch(e){}
+}
+
+function hideNudge(){ document.getElementById('nudge-modal').style.display='none'; }
+
+window.nudgeYes = ()=>{
+  hideNudge();
+  scheduleNudge();
+};
+
+window.nudgeSwitch = ()=>{
+  hideNudge();
+  stopTimer();
+  setTimeout(()=>{
+    selectedCat=null; renderCats();
+    document.getElementById('timer-cat-label').textContent='Pick a new activity';
+  },100);
+};
+
+window.nudgeStop = ()=>{
+  hideNudge();
+  stopTimer();
+};
+
 window.startTimer = ()=>{
   if(!isToday(viewDate)){alert('You can only start a timer for today.');return;}
   if(!selectedCat){alert('Select an activity first.');return;}
-  timerStart=new Date(); timerOn=true;
-  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString()}));
+  timerStart=new Date(); timerOn=true; timerPaused=false; pausedElapsed=0;
+  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed:0}));
   document.getElementById('start-btn').style.display='none';
   document.getElementById('stop-btn').style.display='';
+  document.getElementById('pause-btn').style.display='';
   document.getElementById('cancel-btn').style.display='';
   timerIv=setInterval(timerTick,1000);
   timerTick();
+  scheduleNudge();
 };
 window.stopTimer = ()=>{
-  clearInterval(timerIv); timerOn=false;
-  localStorage.removeItem('dt_timer');
+  clearInterval(timerIv); clearTimeout(nudgeTimeout); timerOn=false; timerPaused=false;
+  localStorage.removeItem('dt_timer'); hideNudge();
   const end=new Date(), cat=categories.find(c=>c.id===selectedCat);
-  saveEntry({id:Date.now(),catId:selectedCat,catName:cat.name,color:cat.color,start:timerStart.toISOString(),end:end.toISOString(),note:''});
-  resetTimer();
+  const totalMs = pausedElapsed + (end.getTime()-timerStart.getTime());
+  const adjStart = new Date(end.getTime()-totalMs);
+  saveEntry({id:Date.now(),catId:selectedCat,catName:cat.name,color:cat.color,start:adjStart.toISOString(),end:end.toISOString(),note:''});
+  pausedElapsed=0; resetTimer();
 };
 window.cancelTimer = ()=>{
-  clearInterval(timerIv); timerOn=false;
-  localStorage.removeItem('dt_timer');
+  clearInterval(timerIv); clearTimeout(nudgeTimeout); timerOn=false; timerPaused=false; pausedElapsed=0;
+  localStorage.removeItem('dt_timer'); hideNudge();
   resetTimer();
+};
+window.pauseTimer = ()=>{
+  if(!timerOn||timerPaused)return;
+  clearInterval(timerIv); clearTimeout(nudgeTimeout); timerPaused=true;
+  pausedElapsed += Date.now()-timerStart.getTime();
+  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed,paused:true}));
+  document.getElementById('pause-btn').style.display='none';
+  document.getElementById('resume-btn').style.display='';
+};
+window.resumeTimer = ()=>{
+  if(!timerPaused)return;
+  timerStart=new Date(); timerPaused=false;
+  localStorage.setItem('dt_timer',JSON.stringify({catId:selectedCat,startISO:timerStart.toISOString(),pausedElapsed}));
+  timerIv=setInterval(timerTick,1000);
+  timerTick();
+  document.getElementById('resume-btn').style.display='none';
+  document.getElementById('pause-btn').style.display='';
+  scheduleNudge();
 };
 function resetTimer(){
   document.getElementById('timer-display').textContent='00:00:00';
   document.getElementById('start-btn').style.display='';
   document.getElementById('stop-btn').style.display='none';
+  document.getElementById('pause-btn').style.display='none';
+  document.getElementById('resume-btn').style.display='none';
   document.getElementById('cancel-btn').style.display='none';
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&timerOn)timerTick();});
@@ -570,7 +685,7 @@ function renderHabits(){
     <div class="settings-chip">
       <span class="dot" style="background:${c.color}"></span>
       <span style="flex:1;font-size:13px;">${c.name}</span>
-      ${i>=DEFAULT_CATS.length?`<button onclick="removeCat('${c.id}')" class="del-btn" style="padding:0 2px;font-size:15px;">×</button>`:''}
+      <button onclick="removeCat('${c.id}')" class="del-btn" style="padding:0 2px;font-size:15px;">×</button>
     </div>`).join('');
 }
 window.addHabit=()=>{
