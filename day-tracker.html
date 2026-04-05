@@ -268,6 +268,19 @@
   </div>
 </div>
 
+<div id="drift-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:300;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg);padding:2rem;max-width:300px;width:100%;text-align:center;border:0.5px solid var(--border2);box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="font-size:32px;margin-bottom:0.75rem;">&#128260;</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:0.5rem;">You drifted</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1.5rem;" id="drift-msg">What do you want to do with the current session?</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="primary" onclick="driftSaveAndSwitch()">Save &amp; switch activity</button>
+      <button onclick="driftContinue()">Actually, continue this one</button>
+      <button class="danger" onclick="driftDiscard()">Discard &amp; switch</button>
+    </div>
+  </div>
+</div>
+
 <div id="nudge-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:200;background:#1a1a2e;color:#fff;padding:12px 16px;box-shadow:0 2px 12px rgba(0,0,0,0.3);">
   <div style="max-width:680px;margin:0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <span style="font-size:18px;">&#127919;</span>
@@ -291,14 +304,13 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, q
 
 // ── PASTE YOUR FIREBASE CONFIG BELOW ─────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD6-uAPDdvxhd4RtxGahIcq6BeKlXGhaZk",
-  authDomain: "accountability-worksheet.firebaseapp.com",
-  projectId: "accountability-worksheet",
-  storageBucket: "accountability-worksheet.firebasestorage.app",
-  messagingSenderId: "426223413166",
-  appId: "1:426223413166:web:a797350d50c483a4b90a3f"
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "accountability-worksheet",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 const fireApp = initializeApp(firebaseConfig);
@@ -605,11 +617,37 @@ window.nudgeYes = ()=>{
 };
 
 window.nudgeSwitch = ()=>{
+  const cat=categories.find(c=>c.id===selectedCat);
+  document.getElementById('drift-msg').textContent=
+    `What do you want to do with the "${cat?cat.name:'current'}" session?`;
+  document.getElementById('drift-modal').style.display='flex';
+};
+
+window.driftSaveAndSwitch = ()=>{
+  document.getElementById('drift-modal').style.display='none';
   hideNudge();
   stopTimer();
   setTimeout(()=>{
     selectedCat=null; renderCats();
     document.getElementById('timer-cat-label').textContent='Pick a new activity';
+    showTab('log');
+  },100);
+};
+
+window.driftContinue = ()=>{
+  document.getElementById('drift-modal').style.display='none';
+  hideNudge();
+  scheduleNudge();
+};
+
+window.driftDiscard = ()=>{
+  document.getElementById('drift-modal').style.display='none';
+  hideNudge();
+  cancelTimer();
+  setTimeout(()=>{
+    selectedCat=null; renderCats();
+    document.getElementById('timer-cat-label').textContent='Pick a new activity';
+    showTab('log');
   },100);
 };
 
